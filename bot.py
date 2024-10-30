@@ -119,6 +119,7 @@ async def show_available_hours(update: Update, date_str: str) -> None:
 
 # Основна функція для запуску бота
 def main():
+    print("Bot is starting...")
     application = ApplicationBuilder().token(TOKEN).build()
 
     # Додаємо обробник для команди /start
