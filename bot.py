@@ -9,35 +9,44 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 
 # Отримання токена з змінної середовища
 TOKEN = os.getenv("TOKEN")
-print("Loaded TOKEN:", TOKEN)  # Друкуємо токен для діагностики
-if not TOKEN:
-    
- print("Error: TOKEN is None. Check environment variable.")
- exit(1)  # Виходимо з програми, якщо токен не завантажено
-
 
 # Словник для зберігання бронювань (ключ - дата, значення - список заброньованих годин)
 schedule_data = {}
 selected_day = {}
+selected_duration = {}
 
 # Словник для перекладу днів тижня
 DAYS_OF_WEEK = {0: "Пн", 1: "Вт", 2: "Ср", 3: "Чт", 4: "Пт", 5: "Сб"}
 
-# Генерація клавіатури з днями тижня (з понеділка по суботу)
+# Генерація клавіатури з днями (на 2 місяці вперед)
 def generate_day_keyboard():
     today = datetime.now()
     days = [
         (today + timedelta(days=i)).strftime("%d.%m.%y") + f" ({DAYS_OF_WEEK[(today + timedelta(days=i)).weekday()]})"
-        for i in range(7 - today.weekday())
-        if (today + timedelta(days=i)).weekday() != 6  # виключаємо неділю
+        for i in range((today + timedelta(days=60) - today).days + 1)
+        if (today + timedelta(days=i)).weekday() != 6
     ]
     keyboard = [[day] for day in days]
     return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
 
-# Генерація клавіатури з доступними годинами з інтервалом у 30 хвилин
-def generate_time_keyboard():
-    hours = [f"{hour:02d}:{minute:02d}" for hour in range(8, 22) for minute in (0, 30)]
+# Генерація клавіатури з доступними годинами, з виключенням минулого часу
+def generate_time_keyboard(selected_date: str):
+    today = datetime.now()
+    selected_date_dt = datetime.strptime(selected_date, "%d.%m.%y")
+    is_today = selected_date_dt.date() == today.date()
+    hours = [
+        f"{hour:02d}:{minute:02d}"
+        for hour in range(8, 22)
+        for minute in (0, 30)
+        if not (is_today and datetime(selected_date_dt.year, selected_date_dt.month, selected_date_dt.day, hour, minute) < today)
+    ]
     keyboard = [[time] for time in hours]
+    return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
+
+# Генерація клавіатури для вибору тривалості заняття
+def generate_duration_keyboard():
+    durations = ["1 год", "1.5 год", "2 год"]
+    keyboard = [[duration] for duration in durations]
     return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
 
 # Функція для команди /start
@@ -51,92 +60,71 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 # Обробник для вибору дня
 async def handle_day_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_name = update.message.from_user.first_name
-    selected_day[update.message.chat_id] = update.message.text.strip().split(" ")[0]  # Зберігаємо обрану дату без дня тижня
+    selected_day[update.message.chat_id] = update.message.text.strip().split(" ")[0]
     await update.message.reply_text(
         f"Ви обрали день {update.message.text}. Тепер виберіть час:",
-        reply_markup=generate_time_keyboard()
+        reply_markup=generate_time_keyboard(selected_day[update.message.chat_id])
     )
 
-# Функція для обробки вибору часу та бронювання
+# Обробник для вибору часу
 async def handle_time_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_name = update.message.from_user.first_name
-    message = update.message.text.strip()
     chat_id = update.message.chat_id
+    message = update.message.text.strip()
+    
+    if chat_id not in selected_day:
+        await update.message.reply_text("Будь ласка, спочатку оберіть день.")
+        return
+
+    selected_duration[chat_id] = message
+    await update.message.reply_text(
+        f"Виберіть тривалість заняття:",
+        reply_markup=generate_duration_keyboard()
+    )
+
+# Обробник для вибору тривалості заняття
+async def handle_duration_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_name = update.message.from_user.first_name
+    chat_id = update.message.chat_id
+    message = update.message.text.strip()
 
     try:
-        # Отримуємо обраний день і час
         selected_date = selected_day.get(chat_id)
-        if not selected_date:
-            await update.message.reply_text("Будь ласка, спочатку оберіть день.")
+        selected_time = selected_duration.get(chat_id)
+        
+        if not selected_date or not selected_time:
+            await update.message.reply_text("Будь ласка, спочатку оберіть день та час.")
             return
 
-        booking_time = datetime.strptime(f"{selected_date} {message}", "%d.%m.%y %H:%M")
-        date_str = booking_time.strftime("%d.%m.%y")
-        hour = booking_time.strftime("%H:%M")
+        duration_hours = float(message.split(" ")[0])
+        booking_start = datetime.strptime(f"{selected_date} {selected_time}", "%d.%m.%y %H:%M")
+        booking_end = booking_start + timedelta(hours=duration_hours)
 
-        # Перевірка доступності часу
+        date_str = booking_start.strftime("%d.%m.%y")
+        hour_str = f"{booking_start.strftime('%H:%M')} - {booking_end.strftime('%H:%M')}"
+
         if date_str not in schedule_data:
             schedule_data[date_str] = []
 
-        if hour in schedule_data[date_str]:
+        if any(hour in schedule_data[date_str] for hour in hour_str.split(" - ")):
             await update.message.reply_text(f"Вибачте, {user_name}, цей час вже зайнято.")
-            await show_available_hours(update, date_str)
         else:
-            # Додаємо бронювання
-            schedule_data[date_str].append(f"{hour} - {user_name}")
-            await update.message.reply_text(f"Чудово, {user_name}! Ви забронювали заняття на {date_str} о {hour}.")
+            schedule_data[date_str].append(hour_str)
+            await update.message.reply_text(f"Чудово, {user_name}! Ви забронювали заняття на {date_str} з {hour_str}.")
 
     except ValueError:
-        await update.message.reply_text("Будь ласка, виберіть час із клавіатури.")
-
-# Функція для показу розкладу на поточний тиждень
-async def show_weekly_schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    today = datetime.now()
-    week_schedule = []
-
-    # Проходимо по днях поточного тижня (з понеділка по суботу)
-    for i in range(7 - today.weekday()):
-        day = today + timedelta(days=i)
-        if day.weekday() == 6:  # Пропускаємо неділю
-            continue
-        
-        date_str = day.strftime("%d.%m.%y")
-        day_name = DAYS_OF_WEEK[day.weekday()]
-        
-        # Отримуємо бронювання на конкретний день
-        if date_str in schedule_data and schedule_data[date_str]:
-            day_schedule = f"{date_str} ({day_name}):\n" + "\n".join(schedule_data[date_str])
-        else:
-            day_schedule = f"{date_str} ({day_name}): жодних бронювань"
-        
-        week_schedule.append(day_schedule)
-
-    # Відправка розкладу
-    schedule_text = "\n\n".join(week_schedule)
-    await update.message.reply_text(f"Розклад на тиждень:\n\n{schedule_text}")
-
-# Функція для показу вільних годин у вибраний день
-async def show_available_hours(update: Update, date_str: str) -> None:
-    available_hours = [f"{hour:02d}:{minute:02d}" for hour in range(8, 22) for minute in (0, 30) if f"{hour:02d}:{minute:02d}" not in schedule_data.get(date_str, [])]
-    if available_hours:
-        await update.message.reply_text(f"Вільні години на {date_str}: {', '.join(available_hours)}")
-    else:
-        await update.message.reply_text(f"На жаль, всі години на {date_str} зайняті.")
+        await update.message.reply_text("Будь ласка, виберіть тривалість заняття із клавіатури.")
 
 # Основна функція для запуску бота
 def main():
-    print("Bot is starting...")  # Повідомлення про запуск
-    print("Loaded TOKEN:", TOKEN)
+    print("Bot is starting...")
     application = ApplicationBuilder().token(TOKEN).build()
 
-    # Додаємо обробник для команди /start
+    # Додаємо обробники для команди /start
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("schedule", show_weekly_schedule))  # Команда для перегляду розкладу на тиждень
-
-    # Обробники для вибору дня і часу
     application.add_handler(MessageHandler(filters.Regex(r"^\d{2}\.\d{2}\.\d{2}"), handle_day_selection))
     application.add_handler(MessageHandler(filters.Regex(r"^\d{2}:\d{2}$"), handle_time_selection))
-
+    application.add_handler(MessageHandler(filters.Regex(r"^1 год$|^1\.5 год$|^2 год$"), handle_duration_selection))
 
     # Запускаємо бота
     application.run_polling()
