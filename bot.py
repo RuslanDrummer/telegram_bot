@@ -7,8 +7,8 @@ from datetime import datetime, timedelta
 # Налаштування логування
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-# Отримання токена з змінного середовища
-TOKEN = os.getenv("7920088294:AAFeENRxSRE8vKLJjfzI1Q-7B4VxdIRqoqY")  # Переконайтеся, що цей токен встановлено в Heroku
+# Отримання токена з змінної середовища
+TOKEN = os.getenv("7920088294:AAFeENRxSRE8vKLJjfzI1Q-7B4VxdIRqoqY")
 
 # Словник для зберігання бронювань (ключ - дата, значення - список заброньованих годин)
 schedule_data = {}
@@ -119,7 +119,7 @@ async def show_available_hours(update: Update, date_str: str) -> None:
 
 # Основна функція для запуску бота
 def main():
-    print("Bot is starting...")
+    print("Bot is starting...")  # Повідомлення про запуск
     application = ApplicationBuilder().token(TOKEN).build()
 
     # Додаємо обробник для команди /start
@@ -127,8 +127,8 @@ def main():
     application.add_handler(CommandHandler("schedule", show_weekly_schedule))  # Команда для перегляду розкладу на тиждень
 
     # Обробники для вибору дня і часу
-    application.add_handler(MessageHandler(filters.Regex("^\d{2}\.\d{2}\.\d{2}"), handle_day_selection))
-    application.add_handler(MessageHandler(filters.Regex("^\d{2}:\d{2}$"), handle_time_selection))
+    application.add_handler(MessageHandler(filters.Regex(r"^\d{2}\.\d{2}\.\d{2}"), handle_day_selection))
+    application.add_handler(MessageHandler(filters.Regex(r"^\d{2}:\d{2}$"), handle_time_selection))
 
     # Запускаємо бота
     application.run_polling()
