@@ -8,7 +8,13 @@ from datetime import datetime, timedelta
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # Отримання токена з змінної середовища
-TOKEN = os.getenv("7920088294:AAFeENRxSRE8vKLJjfzI1Q-7B4VxdIRqoqY")
+TOKEN = os.getenv("TOKEN")
+print("Loaded TOKEN:", TOKEN)  # Друкуємо токен для діагностики
+if not TOKEN:
+    
+ print("Error: TOKEN is None. Check environment variable.")
+ exit(1)  # Виходимо з програми, якщо токен не завантажено
+
 
 # Словник для зберігання бронювань (ключ - дата, значення - список заброньованих годин)
 schedule_data = {}
