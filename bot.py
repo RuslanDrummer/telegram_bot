@@ -10,35 +10,34 @@ logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s
 # Отримання токена з змінної середовища
 TOKEN = os.getenv("TOKEN")
 
-# Словник для зберігання бронювань (ключ - дата, значення - список заброньованих годин)
+# Словник для зберігання бронювань
 schedule_data = {}
 selected_day = {}
-selected_time_slot = {}
+selected_time = {}
 
-# Словник для перекладу днів тижня
-DAYS_OF_WEEK = {0: "Пн", 1: "Вт", 2: "Ср", 3: "Чт", 4: "Пт", 5: "Сб"}
-
-# Генерація клавіатури з днями для бронювання на 60 днів вперед
+# Генерація клавіатури з днями для вибору на 2 місяці вперед
 def generate_day_keyboard():
     today = datetime.now()
     days = [
-        (today + timedelta(days=i)).strftime("%d.%m.%y") + f" ({DAYS_OF_WEEK[(today + timedelta(days=i)).weekday()]})"
+        (today + timedelta(days=i)).strftime("%d.%m.%y")
         for i in range(60)
-        if (today + timedelta(days=i)).weekday() != 6  # виключаємо неділю
     ]
     keyboard = [[day] for day in days]
     return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
 
-# Генерація клавіатури з доступними годинами з інтервалом у 30 хвилин
-def generate_time_keyboard(selected_date):
-    today = datetime.now()
-    selected_date_obj = datetime.strptime(selected_date, "%d.%m.%y")
-    start_hour = today.hour if selected_date_obj.date() == today.date() else 8
-
-    hours = [
-        f"{hour:02d}:{minute:02d}" for hour in range(start_hour, 22) for minute in (0, 30)
-        if selected_date_obj.date() > today.date() or (hour > today.hour or (hour == today.hour and minute > today.minute))
-    ]
+# Генерація клавіатури з доступними годинами
+def generate_time_keyboard(selected_date=None):
+    now = datetime.now()
+    hours = []
+    for hour in range(8, 22):
+        for minute in (0, 30):
+            time_str = f"{hour:02d}:{minute:02d}"
+            if selected_date == now.strftime("%d.%m.%y"):
+                booking_time = datetime.strptime(f"{selected_date} {time_str}", "%d.%m.%y %H:%M")
+                if booking_time > now:
+                    hours.append(time_str)
+            else:
+                hours.append(time_str)
     keyboard = [[time] for time in hours]
     return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
 
@@ -48,135 +47,88 @@ def generate_duration_keyboard():
     keyboard = [[duration] for duration in durations]
     return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
 
-# Функція для команди /start
+# Команда /start
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_name = update.message.from_user.first_name
     await update.message.reply_text(
-        f'Привіт, {user_name}! Виберіть день для заняття. Відміна заняття можлива не пізніше ніж за 12 годин до початку:',
+        f'Привіт, {user_name}! Виберіть день для заняття (відміна за 12 год до початку):',
         reply_markup=generate_day_keyboard()
     )
 
-# Обробник для вибору дня
+# Обробник вибору дня
 async def handle_day_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_name = update.message.from_user.first_name
-    selected_day[update.message.chat_id] = update.message.text.strip().split(" ")[0]  # Зберігаємо обрану дату без дня тижня
-    await update.message.reply_text(
-        f"Ви обрали день {update.message.text}. Тепер виберіть час:",
-        reply_markup=generate_time_keyboard(selected_day[update.message.chat_id])
-    )
+    selected_day[update.message.chat_id] = update.message.text.strip()
+    await update.message.reply_text("Тепер виберіть час:", reply_markup=generate_time_keyboard(selected_day[update.message.chat_id]))
 
-# Обробник для вибору часу
+# Обробник вибору часу
 async def handle_time_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_name = update.message.from_user.first_name
-    message = update.message.text.strip()
-    chat_id = update.message.chat_id
+    selected_time[update.message.chat_id] = update.message.text.strip()
+    await update.message.reply_text("Оберіть тривалість заняття:", reply_markup=generate_duration_keyboard())
 
-    selected_date = selected_day.get(chat_id)
-    if not selected_date:
-        await update.message.reply_text("Будь ласка, спочатку оберіть день.")
-        return
-
-    selected_time_slot[chat_id] = message
-    await update.message.reply_text(
-        "Оберіть тривалість заняття:",
-        reply_markup=generate_duration_keyboard()
-    )
-
-# Функція для обробки вибору тривалості заняття
+# Обробник вибору тривалості та підтвердження бронювання
 async def handle_duration_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_name = update.message.from_user.first_name
-    user_nickname = f"@{update.message.from_user.username}" if update.message.from_user.username else "без нікнейму"
-    duration = update.message.text.strip()
     chat_id = update.message.chat_id
-
+    duration = update.message.text.strip()
     selected_date = selected_day.get(chat_id)
-    selected_time = selected_time_slot.get(chat_id)
-    if not selected_date or not selected_time:
-        await update.message.reply_text("Спершу оберіть день та час.")
+    selected_hour = selected_time.get(chat_id)
+
+    if not selected_date or not selected_hour:
+        await update.message.reply_text("Будь ласка, почніть спочатку, використовуючи команду /start.")
         return
 
-    booking_time = datetime.strptime(f"{selected_date} {selected_time}", "%d.%m.%y %H:%M")
-    end_time = booking_time + timedelta(hours=float(duration.split()[0]))
+    booking_time = datetime.strptime(f"{selected_date} {selected_hour}", "%d.%m.%y %H:%M")
     date_str = booking_time.strftime("%d.%m.%y")
-    time_slot = f"{selected_time} - {end_time.strftime('%H:%M')}"
+    hour_str = f"{selected_hour} ({duration})"
 
-    # Перевірка доступності
     if date_str not in schedule_data:
-        schedule_data[date_str] = []
+        schedule_data[date_str] = {}
 
-    if any(time_slot in b for b in schedule_data[date_str]):
-        await update.message.reply_text(f"Час {time_slot} вже зайнятий.")
-        await show_available_hours(update, date_str)
+    if hour_str in schedule_data[date_str]:
+        await update.message.reply_text(f"Час {selected_hour} вже зайнятий.")
     else:
-        booking_entry = f"{time_slot} - {user_name} ({user_nickname})"
-        schedule_data[date_str].append(booking_entry)
+        schedule_data[date_str][hour_str] = f"{user_name} (@{update.message.from_user.username})"
         await update.message.reply_text(
-            f"Ваше заняття заброньовано на {date_str}, {time_slot}. "
-            "Відміна заняття можлива не пізніше ніж за 12 годин до початку."
+            f"Заняття заброньовано на {date_str} о {selected_hour} на {duration}. "
+            "Відміна можлива мінімум за 12 годин до заняття."
         )
 
-# Функція для показу всіх бронювань з нікнеймами
-async def show_all_bookings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if not schedule_data:
-        await update.message.reply_text("Жодних бронювань немає.")
-        return
-
-    all_bookings = []
-    for date, bookings in schedule_data.items():
-        day_bookings = f"{date}:\n" + "\n".join(bookings)
-        all_bookings.append(day_bookings)
-
-    bookings_text = "\n\n".join(all_bookings)
-    await update.message.reply_text(f"Усі бронювання:\n\n{bookings_text}")
-
-# Функція для відміни бронювання
-async def cancel_booking(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+# Команда /cancel для відміни заняття
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_name = update.message.from_user.first_name
     chat_id = update.message.chat_id
+    now = datetime.now()
+    
+    user_bookings = [
+        (date, hour) for date, bookings in schedule_data.items() 
+        for hour, name in bookings.items() if name.startswith(user_name)
+    ]
 
-    if chat_id not in selected_day or chat_id not in selected_time_slot:
-        await update.message.reply_text("У вас немає активних бронювань.")
+    if not user_bookings:
+        await update.message.reply_text("Не знайдено активних бронювань для відміни.")
         return
 
-    selected_date = selected_day[chat_id]
-    selected_time = selected_time_slot[chat_id]
-    booking_time = datetime.strptime(f"{selected_date} {selected_time}", "%d.%m.%y %H:%M")
-    current_time = datetime.now()
-
-    # Перевірка часу для відміни
-    if (booking_time - current_time).total_seconds() / 3600 < 12:
-        await update.message.reply_text(
-            "Відміна можлива лише за 12 годин до початку заняття. "
-            "Будь ласка, сплатіть орендну плату у розмірі 200 грн на номер карти 5375411509960642."
-        )
-    else:
-        date_str = booking_time.strftime("%d.%m.%y")
-        time_slot = f"{selected_time} - {(booking_time + timedelta(hours=1)).strftime('%H:%M')}"
-        
-        # Видаляємо бронювання
-        if date_str in schedule_data and time_slot in [b.split(" - ")[0] for b in schedule_data[date_str]]:
-            schedule_data[date_str] = [b for b in schedule_data[date_str] if time_slot not in b]
-            await update.message.reply_text(f"Ваше заняття на {date_str} о {selected_time} успішно відмінено.")
+    for date, hour in user_bookings:
+        booking_time = datetime.strptime(f"{date} {hour.split()[0]}", "%d.%m.%y %H:%M")
+        if booking_time - now > timedelta(hours=12):
+            del schedule_data[date][hour]
+            await update.message.reply_text(f"Ваше заняття на {date} о {hour} скасовано.")
         else:
-            await update.message.reply_text("Не знайдено бронювання для відміни.")
+            await update.message.reply_text(
+                f"Заняття на {date} о {hour} не можна скасувати пізніше, ніж за 12 годин до початку. "
+                "Для відміни необхідно оплатити оренду 200 грн. "
+                "Оплатіть, будь ласка, на карту 5375411509960642."
+            )
 
 # Основна функція для запуску бота
 def main():
-    print("Bot is starting...")  # Повідомлення про запуск
-    print("Loaded TOKEN:", TOKEN)
+    print("Bot is starting...")
     application = ApplicationBuilder().token(TOKEN).build()
-
-    # Додаємо обробник для команди /start
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CommandHandler("schedule", show_all_bookings))  # Команда для перегляду всіх бронювань
-    application.add_handler(CommandHandler("cancel", cancel_booking))  # Команда для відміни бронювання
-
-    # Обробники для вибору дня, часу і тривалості
-    application.add_handler(MessageHandler(filters.Regex(r"^\d{2}\.\d{2}\.\d{2}"), handle_day_selection))
+    application.add_handler(CommandHandler("cancel", cancel))
+    application.add_handler(MessageHandler(filters.Regex(r"^\d{2}\.\d{2}\.\d{2}$"), handle_day_selection))
     application.add_handler(MessageHandler(filters.Regex(r"^\d{2}:\d{2}$"), handle_time_selection))
-    application.add_handler(MessageHandler(filters.Regex(r"^(1 год|1.5 год|2 год)$"), handle_duration_selection))
-
-    # Запускаємо бота
+    application.add_handler(MessageHandler(filters.Regex(r"^\d\.\d год$"), handle_duration_selection))
     application.run_polling()
 
 if __name__ == '__main__':
