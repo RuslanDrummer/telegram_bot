@@ -8,7 +8,7 @@ from datetime import datetime, timedelta
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 # Отримання токена з змінної середовища
-TOKEN = os.getenv('7920088294:AAFeENRxSRE8vKLJjfzI1Q-7B4VxdIRqoqY')
+TOKEN = os.getenv("7920088294:AAFeENRxSRE8vKLJjfzI1Q-7B4VxdIRqoqY")
 
 # Словник для зберігання бронювань (ключ - дата, значення - список заброньованих годин)
 schedule_data = {}
