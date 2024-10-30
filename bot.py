@@ -120,6 +120,7 @@ async def show_available_hours(update: Update, date_str: str) -> None:
 # Основна функція для запуску бота
 def main():
     print("Bot is starting...")  # Повідомлення про запуск
+    print("Loaded TOKEN:", TOKEN)
     application = ApplicationBuilder().token(TOKEN).build()
 
     # Додаємо обробник для команди /start
@@ -129,6 +130,7 @@ def main():
     # Обробники для вибору дня і часу
     application.add_handler(MessageHandler(filters.Regex(r"^\d{2}\.\d{2}\.\d{2}"), handle_day_selection))
     application.add_handler(MessageHandler(filters.Regex(r"^\d{2}:\d{2}$"), handle_time_selection))
+
 
     # Запускаємо бота
     application.run_polling()
