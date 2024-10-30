@@ -1,3 +1,4 @@
+import os
 import logging
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
@@ -6,7 +7,8 @@ from datetime import datetime, timedelta
 # Налаштування логування
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-TOKEN = '7920088294:AAFeENRxSRE8vKLJjfzI1Q-7B4VxdIRqoqY'  # Замініть на ваш токен
+# Отримання токена з змінного середовища
+TOKEN = os.getenv("7920088294:AAFeENRxSRE8vKLJjfzI1Q-7B4VxdIRqoqY")  # Переконайтеся, що цей токен встановлено в Heroku
 
 # Словник для зберігання бронювань (ключ - дата, значення - список заброньованих годин)
 schedule_data = {}
