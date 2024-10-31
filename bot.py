@@ -1,5 +1,6 @@
 import os
 import logging
+import sqlite3
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from datetime import datetime, timedelta
@@ -7,187 +8,145 @@ from datetime import datetime, timedelta
 # Налаштування логування
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-TOKEN = os.getenv("TOKEN")
+# Підключення до бази даних
+conn = sqlite3.connect('schedule.db', check_same_thread=False)
+cursor = conn.cursor()
 
+# Створення таблиць для бронювань та користувачів
+cursor.execute('''CREATE TABLE IF NOT EXISTS bookings (
+                    id INTEGER PRIMARY KEY AUTOINCREMENT,
+                    user_id INTEGER,
+                    username TEXT,
+                    date TEXT,
+                    time TEXT,
+                    duration REAL)''')
+
+cursor.execute('''CREATE TABLE IF NOT EXISTS users (
+                    user_id INTEGER PRIMARY KEY,
+                    username TEXT,
+                    role TEXT)''')
+
+conn.commit()
+
+# Змінні для робочих годин
 WORKING_HOURS_START = 8
 WORKING_HOURS_END = 20
 
-# Дані для бронювання та обраного дня
-schedule_data = {}
-selected_day = {}
+# Отримання токена з змінної середовища
+TOKEN = os.getenv("TOKEN")  # Вставте свій токен тут або налаштуйте в системі як змінну середовища
 
-def generate_start_menu():
-    keyboard = [["Почати"]]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+# Додавання користувачів
+def add_user(user_id, username, role):
+    cursor.execute("INSERT OR IGNORE INTO users (user_id, username, role) VALUES (?, ?, ?)", (user_id, username, role))
+    conn.commit()
 
-def generate_main_menu():
-    keyboard = [
-        ["Забронювати вільні години"],
-        ["Скасувати заняття"],
-        ["Переглянути заброньовані заняття"]
-    ]
-    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+# Функція для команди /start
+async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user = update.effective_user
+    add_user(user.id, user.username, "student")
+    await update.message.reply_text(
+        "Привіт! Ви можете:\n"
+        "/book - Забронювати час\n"
+        "/schedule - Переглянути розклад\n"
+        "/cancel - Скасувати бронювання\n"
+        "/sethours - Змінити робочі години (лише для вчителя)",
+        reply_markup=ReplyKeyboardMarkup([["/book", "/schedule", "/cancel"]], resize_keyboard=True)
+    )
+
+# Перевірка ролі користувача
+def is_teacher(user_id):
+    cursor.execute("SELECT role FROM users WHERE user_id = ?", (user_id,))
+    result = cursor.fetchone()
+    return result and result[0] == "teacher"
+
+# Функція для зміни робочих годин
+async def sethours(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if is_teacher(update.effective_user.id):
+        try:
+            start, end = map(int, context.args)
+            global WORKING_HOURS_START, WORKING_HOURS_END
+            WORKING_HOURS_START, WORKING_HOURS_END = start, end
+            await update.message.reply_text(f"Робочі години змінені на {start}:00 - {end}:00.")
+        except ValueError:
+            await update.message.reply_text("Введіть початкову і кінцеву годину, наприклад: /sethours 8 20")
+    else:
+        await update.message.reply_text("Вибачте, ця команда доступна лише для вчителя.")
+
+# Функція для бронювання
+async def book(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    await update.message.reply_text("Виберіть день для заняття:", reply_markup=generate_day_keyboard())
 
 def generate_day_keyboard():
     today = datetime.now()
-    days = [
-        (today + timedelta(days=i)).strftime("%d.%m.%y")
-        for i in range(60)
-    ]
+    days = [(today + timedelta(days=i)).strftime("%d.%m.%Y") for i in range(60)]
     keyboard = [[day] for day in days]
-    keyboard.append(["Назад"])
     return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-
-def generate_time_keyboard(selected_date):
-    today = datetime.now()
-    available_times = [
-        f"{hour:02d}:{minute:02d}" for hour in range(WORKING_HOURS_START, WORKING_HOURS_END + 1)
-        for minute in (0, 30)
-    ]
-    if selected_date == today.strftime("%d.%m.%y"):
-        available_times = [time for time in available_times if datetime.strptime(time, "%H:%M") > today]
-
-    booked_times = schedule_data.get(selected_date, [])
-    available_times = [
-        time for time in available_times if not any(
-            booked_time <= datetime.strptime(time, "%H:%M") < (booked_time + booked_duration)
-            for booked_time, booked_duration in booked_times
-        )
-    ]
-
-    if not available_times:
-        return None
-    else:
-        keyboard = [[time] for time in available_times]
-        keyboard.append(["Назад"])
-        return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-
-def generate_duration_keyboard():
-    keyboard = [["1 година"], ["1.5 години"], ["2 години"], ["Назад"]]
-    return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
-
-async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "Натисніть 'Почати' для доступу до меню.",
-        reply_markup=generate_start_menu()
-    )
-
-async def start_menu(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "Вітаю! Використовуйте меню для навігації.",
-        reply_markup=generate_main_menu()
-    )
-
-async def handle_booking(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    await update.message.reply_text(
-        "Оберіть день для заняття:",
-        reply_markup=generate_day_keyboard()
-    )
 
 async def handle_day_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.message.text == "Назад":
-        await start_menu(update, context)
-        return
+    selected_date = update.message.text
+    context.user_data["selected_date"] = selected_date
+    await update.message.reply_text("Виберіть час:", reply_markup=generate_time_keyboard(selected_date))
 
-    selected_day[update.message.chat_id] = update.message.text
-    time_keyboard = generate_time_keyboard(selected_day[update.message.chat_id])
+def generate_time_keyboard(selected_date):
+    today = datetime.now().strftime("%d.%m.%Y")
+    hours = [f"{hour:02d}:00" for hour in range(WORKING_HOURS_START, WORKING_HOURS_END)]
+    if selected_date == today:
+        current_hour = datetime.now().hour
+        hours = [time for time in hours if int(time.split(":")[0]) > current_hour]
+    keyboard = [[time] for time in hours]
+    return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
 
-    if time_keyboard is None:
-        await update.message.reply_text(
-            "На обраний день більше немає доступних годин. Оберіть інший день.",
-            reply_markup=generate_day_keyboard()
-        )
-    else:
-        await update.message.reply_text("Оберіть час:", reply_markup=time_keyboard)
-
+# Логіка для завершення бронювання
 async def handle_time_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.message.text == "Назад":
-        await handle_booking(update, context)
-        return
-
+    user = update.effective_user
     selected_time = update.message.text
-    selected_day[update.message.chat_id] = f"{selected_day[update.message.chat_id]} {selected_time}"
-    await update.message.reply_text("Оберіть тривалість заняття:", reply_markup=generate_duration_keyboard())
+    selected_date = context.user_data.get("selected_date")
 
-async def handle_duration_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.message.text == "Назад":
-        await handle_booking(update, context)
+    cursor.execute("SELECT * FROM bookings WHERE date=? AND time=?", (selected_date, selected_time))
+    if cursor.fetchone():
+        await update.message.reply_text("Цей час вже зайнято.")
         return
 
-    duration = update.message.text
-    duration_minutes = {"1 година": 60, "1.5 години": 90, "2 години": 120}[duration]
-    chat_id = update.message.chat_id
-    user_name = update.message.from_user.first_name
+    cursor.execute("INSERT INTO bookings (user_id, username, date, time, duration) VALUES (?, ?, ?, ?, ?)",
+                   (user.id, user.username, selected_date, selected_time, 1.0))
+    conn.commit()
+    await update.message.reply_text(f"Ви забронювали заняття на {selected_date} о {selected_time}.")
 
-    selected_date, selected_time = selected_day[chat_id].split(" ")
-    selected_datetime = datetime.strptime(selected_time, "%H:%M")
-    end_time = (selected_datetime + timedelta(minutes=duration_minutes)).strftime("%H:%M")
+# Функція для скасування бронювання
+async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    cursor.execute("SELECT id, date, time FROM bookings WHERE user_id=?", (user_id,))
+    bookings = cursor.fetchall()
 
-    if selected_date not in schedule_data:
-        schedule_data[selected_date] = []
-
-    schedule_data[selected_date].append((selected_datetime, timedelta(minutes=duration_minutes), f"{user_name} ({duration})"))
-    await update.message.reply_text(
-        f"Заняття заброньовано на {selected_date} о {selected_time} до {end_time}.",
-        reply_markup=generate_main_menu()
-    )
-
-async def handle_view_bookings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    booked_schedule = []
-
-    for date, bookings in schedule_data.items():
-        day_schedule = f"{date}:\n" + "\n".join([f"{time.strftime('%H:%M')} - {user}" for time, _, user in bookings])
-        booked_schedule.append(day_schedule)
-
-    if booked_schedule:
-        await update.message.reply_text("Заброньовані заняття:\n" + "\n\n".join(booked_schedule))
+    if bookings:
+        for booking_id, date, time in bookings:
+            cursor.execute("DELETE FROM bookings WHERE id=?", (booking_id,))
+            conn.commit()
+            await update.message.reply_text(f"Ваше заняття на {date} о {time} скасовано.")
     else:
-        await update.message.reply_text("Заброньованих занять немає.", reply_markup=generate_main_menu())
+        await update.message.reply_text("У вас немає активних бронювань.")
 
-async def handle_cancellation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    user_name = update.message.from_user.first_name
-    user_bookings = []
-
-    for date, bookings in schedule_data.items():
-        for booking in bookings:
-            if user_name in booking[2]:
-                user_bookings.append(f"{date} {booking[0].strftime('%H:%M')} - {booking[2]}")
-
-    if user_bookings:
-        keyboard = [[booking] for booking in user_bookings]
-        keyboard.append(["Назад"])
-        await update.message.reply_text("Ваші заброньовані заняття. Оберіть для скасування:", reply_markup=ReplyKeyboardMarkup(keyboard, one_time_keyboard=True))
+# Функція для перегляду розкладу
+async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    cursor.execute("SELECT username, date, time FROM bookings")
+    bookings = cursor.fetchall()
+    if bookings:
+        schedule_text = "\n".join([f"{username}: {date} о {time}" for username, date, time in bookings])
+        await update.message.reply_text(f"Розклад:\n{schedule_text}")
     else:
-        await update.message.reply_text("У вас немає заброньованих занять.", reply_markup=generate_main_menu())
+        await update.message.reply_text("Розклад порожній.")
 
-async def confirm_cancellation(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
-    if update.message.text == "Назад":
-        await handle_cancellation(update, context)
-        return
-
-    selected_booking = update.message.text
-    date, time = selected_booking.split(" ", 1)
-    for booking in schedule_data[date]:
-        if booking[0].strftime("%H:%M") in time:
-            schedule_data[date].remove(booking)
-            break
-    if not schedule_data[date]:
-        del schedule_data[date]
-        
-    await update.message.reply_text("Заняття скасовано.", reply_markup=generate_main_menu())
-
+# Основна функція для запуску бота
 def main():
     application = ApplicationBuilder().token(TOKEN).build()
+
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(MessageHandler(filters.Regex("^Почати$"), start_menu))
-    application.add_handler(MessageHandler(filters.Regex("^Забронювати вільні години$"), handle_booking))
-    application.add_handler(MessageHandler(filters.Regex("^Скасувати заняття$"), handle_cancellation))
-    application.add_handler(MessageHandler(filters.Regex("^Переглянути заброньовані заняття$"), handle_view_bookings))
-    application.add_handler(MessageHandler(filters.Regex(r"^\d{2}\.\d{2}\.\d{2}$"), handle_day_selection))
+    application.add_handler(CommandHandler("sethours", sethours))
+    application.add_handler(CommandHandler("book", book))
+    application.add_handler(CommandHandler("schedule", schedule))
+    application.add_handler(CommandHandler("cancel", cancel))
+    application.add_handler(MessageHandler(filters.Regex(r"^\d{2}\.\d{2}\.\d{4}$"), handle_day_selection))
     application.add_handler(MessageHandler(filters.Regex(r"^\d{2}:\d{2}$"), handle_time_selection))
-    application.add_handler(MessageHandler(filters.Regex(r"^(1 година|1\.5 години|2 години)$"), handle_duration_selection))
-    application.add_handler(MessageHandler(filters.Regex(r"^Назад$"), start_menu))
-    application.add_handler(MessageHandler(filters.Regex(r"^\d{2}\.\d{2}\.\d{2} .*"), confirm_cancellation))
 
     application.run_polling()
 
