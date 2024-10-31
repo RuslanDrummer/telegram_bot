@@ -4,6 +4,7 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from datetime import datetime, timedelta
 
+# Налаштування логування
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
 TOKEN = os.getenv("TOKEN")
@@ -11,6 +12,7 @@ TOKEN = os.getenv("TOKEN")
 WORKING_HOURS_START = 8
 WORKING_HOURS_END = 20
 
+# Дані для бронювання та обраного дня
 schedule_data = {}
 selected_day = {}
 
