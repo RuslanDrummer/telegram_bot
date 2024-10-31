@@ -40,13 +40,19 @@ def generate_day_keyboard():
 
 def generate_time_keyboard(selected_date):
     today = datetime.now()
+    current_time = today.strftime("%H:%M")
     available_times = [
         f"{hour:02d}:{minute:02d}" for hour in range(WORKING_HOURS_START, WORKING_HOURS_END + 1)
         for minute in (0, 30)
     ]
+    
+    # Якщо обраний день - сьогоднішній, показуємо тільки майбутні часи
     if selected_date == today.strftime("%d.%m.%y"):
-        available_times = [time for time in available_times if datetime.strptime(time, "%H:%M") > today]
+        available_times = [
+            time for time in available_times if time > current_time
+        ]
 
+    # Отримуємо вже заброньовані часи на обраний день
     booked_times = schedule_data.get(selected_date, [])
     available_times = [
         time for time in available_times if not any(
@@ -55,6 +61,7 @@ def generate_time_keyboard(selected_date):
         )
     ]
 
+    # Перевіряємо, чи є доступні часи для бронювання
     if not available_times:
         return None
     else:
