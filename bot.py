@@ -93,7 +93,7 @@ async def handle_duration_selection(update: Update, context: ContextTypes.DEFAUL
     selected_hour = selected_time.get(user_id)
 
     if not selected_date or not selected_hour:
-        await update.message.reply_text("Помилка бронювання. Спробуйте ще раз.")
+        await update.message.reply_text("Помилка бронювання. Спробуйте ще раз.", reply_markup=generate_main_menu())
         return
 
     # Finalize booking if the slot is free
@@ -107,7 +107,7 @@ async def handle_duration_selection(update: Update, context: ContextTypes.DEFAUL
             reply_markup=generate_main_menu()
         )
     else:
-        await update.message.reply_text("Цей час вже зайнятий. Оберіть інший час.")
+        await update.message.reply_text("Цей час вже зайнятий. Оберіть інший час.", reply_markup=generate_time_keyboard(selected_date))
 
 # Show the user's current bookings with a cancel option
 async def show_user_bookings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
