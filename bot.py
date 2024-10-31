@@ -20,7 +20,6 @@ DAYS_OF_WEEK = {0: "Пн", 1: "Вт", 2: "Ср", 3: "Чт", 4: "Пт", 5: "Сб"
 # Генерація основного меню
 def generate_main_menu():
     keyboard = [
-        ["Старт"],
         ["Бронювання вільних годин", "Скасування заняття"]
     ]
     return ReplyKeyboardMarkup(keyboard, one_time_keyboard=True, resize_keyboard=True)
@@ -84,6 +83,11 @@ async def handle_cancellation(update: Update, context: ContextTypes.DEFAULT_TYPE
     else:
         await update.message.reply_text("У вас немає заброньованих занять для скасування.")
 
+# Обробка вибору дня
+async def handle_day_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    selected_day[update.message.chat_id] = update.message.text.strip().split(" ")[0]
+    await update.message.reply_text("Тепер виберіть час:", reply_markup=generate_time_keyboard(selected_day[update.message.chat_id]))
+
 # Обробка вибору часу
 async def handle_time_selection(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     message = update.message.text.strip()
@@ -107,7 +111,9 @@ async def handle_time_selection(update: Update, context: ContextTypes.DEFAULT_TY
             await update.message.reply_text(f"Вільні години на {date_str}:", reply_markup=generate_time_keyboard(selected_date))
         else:
             schedule_data[date_str][hour] = chat_id
-            await update.message.reply_text(f"Ви успішно забронювали заняття на {date_str} о {hour}.")
+            await update.message.reply_text(
+                f"Ви успішно забронювали заняття на {date_str} о {hour}. Відміну можна зробити за 12 годин до заняття."
+            )
     except ValueError:
         await update.message.reply_text("Будь ласка, виберіть час із клавіатури.")
 
@@ -144,7 +150,7 @@ def main():
     application.add_handler(MessageHandler(filters.Text("Бронювання вільних годин"), handle_booking))
     application.add_handler(MessageHandler(filters.Text("Скасування заняття"), handle_cancellation))
 
-    application.add_handler(MessageHandler(filters.Regex(r"^\d{2}\.\d{2}\.\d{2}$"), handle_time_selection))
+    application.add_handler(MessageHandler(filters.Regex(r"^\d{2}\.\d{2}\.\d{2}$"), handle_day_selection))
     application.add_handler(MessageHandler(filters.Regex(r"^\d{2}:\d{2}$"), handle_time_selection))
     application.add_handler(MessageHandler(filters.Regex(r"^\d{2}\.\d{2}\.\d{2} \d{2}:\d{2}$"), cancel_booking))
 
