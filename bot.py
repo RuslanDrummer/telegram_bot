@@ -191,8 +191,8 @@ async def main():
     application.add_handler(MessageHandler(filters.Regex(r"^\d{2}:\d{2}$"), lambda update, context: handle_time_selection(update, context, pool)))
     application.add_handler(MessageHandler(filters.Regex(r"^(1 година|1\.5 години|2 години)$"), lambda update, context: handle_duration_selection(update, context, pool)))
 
-    application.run_polling()
+    await application.run_polling()
 
 if __name__ == '__main__':
     import asyncio
-    asyncio.run(main())
+    asyncio.get_event_loop().run_until_complete(main())
