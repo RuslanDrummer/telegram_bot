@@ -54,10 +54,12 @@ async def main():
     await application.start()
     logging.info("Bot polling started")
     
+    # Замінюємо updater.idle()
     try:
-        await application.updater.idle()  # Чекає завершення роботи
+        await asyncio.Event().wait()  # Чекає завершення вручну
     finally:
         await application.stop()
+        await application.shutdown()
         logging.info("Bot polling stopped")
 
 # Основний запуск
