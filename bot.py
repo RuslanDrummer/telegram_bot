@@ -1,17 +1,14 @@
 import asyncio
+import concurrent.futures
 import os
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler
+from telegram.ext import Application, CommandHandler, CallbackQueryHandler, CallbackContext
 import asyncpg
 
 # Ініціалізація змінних середовища
 TELEGRAM_TOKEN = os.getenv("TOKEN")
 NEON_DATABASE_URL = os.getenv("DATABASE_URL")
-
-# Функція для підключення до бази даних
-async def connect_db():
-    return await asyncpg.connect(NEON_DATABASE_URL)
 
 # Обробник команди /start
 async def start(update: Update, context: CallbackContext) -> None:
@@ -22,20 +19,6 @@ async def start(update: Update, context: CallbackContext) -> None:
     ]
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Виберіть дію:", reply_markup=reply_markup)
-
-# Обробка вибору дії користувача
-async def handle_menu_selection(update: Update, context: CallbackContext) -> None:
-    query = update.callback_query
-    await query.answer()
-
-    if query.data == "book_lesson":
-        await show_available_times(query)
-    elif query.data == "my_bookings":
-        await show_my_bookings(query)
-    elif query.data == "cancel_lesson":
-        await show_cancel_options(query)
-    elif query.data == "back_to_menu":
-        await start(update, context)
 
 # Показ доступного часу для бронювання
 async def show_available_times(query):
@@ -72,21 +55,21 @@ async def handle_time_selection(update: Update, context: CallbackContext) -> Non
 
 # Перевірка доступності часу
 async def is_time_available(date: datetime, time: str) -> bool:
-    conn = await connect_db()
+    conn = await asyncpg.connect(NEON_DATABASE_URL)
     result = await conn.fetchrow("SELECT 1 FROM bookings WHERE date=$1 AND time=$2", date, time)
     await conn.close()
     return result is None
 
 # Збереження бронювання
 async def save_booking(user_id: int, date: datetime, time: str) -> None:
-    conn = await connect_db()
+    conn = await asyncpg.connect(NEON_DATABASE_URL)
     await conn.execute("INSERT INTO bookings (user_id, date, time) VALUES ($1, $2, $3)", user_id, date, time)
     await conn.close()
 
 # Показ бронювань користувача
 async def show_my_bookings(query):
     user_id = query.from_user.id
-    conn = await connect_db()
+    conn = await asyncpg.connect(NEON_DATABASE_URL)
     bookings = await conn.fetch("SELECT date, time FROM bookings WHERE user_id=$1 ORDER BY date, time", user_id)
     await conn.close()
     
@@ -102,7 +85,7 @@ async def show_my_bookings(query):
 # Показ бронювань для скасування
 async def show_cancel_options(query):
     user_id = query.from_user.id
-    conn = await connect_db()
+    conn = await asyncpg.connect(NEON_DATABASE_URL)
     bookings = await conn.fetch("SELECT id, date, time FROM bookings WHERE user_id=$1 ORDER BY date, time", user_id)
     await conn.close()
     
@@ -120,22 +103,30 @@ async def handle_cancel_selection(update: Update, context: CallbackContext) -> N
     await query.answer()
     
     booking_id = int(query.data.split("_")[1])
-    conn = await connect_db()
+    conn = await asyncpg.connect(NEON_DATABASE_URL)
     await conn.execute("DELETE FROM bookings WHERE id=$1", booking_id)
     await conn.close()
     await query.edit_message_text("Ваше бронювання скасовано.")
 
-# Функція для запуску бота
-async def main():
+# Функція для запуску бота у новому процесі
+def run_bot():
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(handle_menu_selection, pattern="^(book_lesson|my_bookings|cancel_lesson|back_to_menu)$"))
+    application.add_handler(CallbackQueryHandler(show_available_times, pattern="^book_lesson$"))
+    application.add_handler(CallbackQueryHandler(show_my_bookings, pattern="^my_bookings$"))
+    application.add_handler(CallbackQueryHandler(show_cancel_options, pattern="^cancel_lesson$"))
     application.add_handler(CallbackQueryHandler(handle_time_selection, pattern="^time_"))
     application.add_handler(CallbackQueryHandler(handle_cancel_selection, pattern="^cancel_"))
+    application.run_polling()
 
-    await application.run_polling()
+# Асинхронна функція для запуску основної програми
+async def main():
+    db_connection = await asyncpg.connect(NEON_DATABASE_URL)
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(executor, run_bot)
+    await db_connection.close()
 
-# Запуск програми з використанням основного подієвого циклу
+# Запуск програми
 if __name__ == "__main__":
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    asyncio.run(main())
