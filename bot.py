@@ -3,12 +3,11 @@ import logging
 import asyncpg
 import asyncio
 from telegram import Update, ReplyKeyboardMarkup
-from telegram.ext import Application, ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
-
-from datetime import datetime, timedelta
+from telegram.ext import Application, CommandHandler, MessageHandler, filters, ContextTypes
 
 # Налаштування логування
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
+logger = logging.getLogger(__name__)
 
 TOKEN = "7920088294:AAFeENRxSRE8vKLJjfzI1Q-7B4VxdIRqoqY"
 DATABASE_URL = os.getenv("DATABASE_URL")
@@ -45,10 +44,10 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Запуск бота
+    # Запуск бота з функцією run_polling
+    await application.initialize()
     await application.start()
-    await application.updater.start_polling()
-    await application.updater.idle()
+    await application.run_polling()
 
 if __name__ == "__main__":
     asyncio.run(main())
