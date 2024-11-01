@@ -1,5 +1,5 @@
-import os
 import asyncio
+import os
 from datetime import datetime, timedelta
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import Application, CommandHandler, CallbackContext, CallbackQueryHandler
@@ -23,7 +23,7 @@ async def start(update: Update, context: CallbackContext) -> None:
     reply_markup = InlineKeyboardMarkup(keyboard)
     await update.message.reply_text("Виберіть дію:", reply_markup=reply_markup)
 
-# Функція для обробки вибору дії користувача
+# Обробка вибору дії користувача
 async def handle_menu_selection(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
@@ -37,7 +37,7 @@ async def handle_menu_selection(update: Update, context: CallbackContext) -> Non
     elif query.data == "back_to_menu":
         await start(update, context)
 
-# Функція для показу доступного часу для бронювання
+# Показ доступного часу для бронювання
 async def show_available_times(query):
     available_times = await get_available_times(datetime.now())
     keyboard = [[InlineKeyboardButton(time, callback_data=f"time_{time}")] for time in available_times]
@@ -45,7 +45,7 @@ async def show_available_times(query):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text("Виберіть час для бронювання:", reply_markup=reply_markup)
 
-# Функція для отримання доступного часу
+# Отримання доступного часу
 async def get_available_times(date: datetime) -> list:
     hours = []
     start_hour, end_hour = 8, 20
@@ -55,7 +55,7 @@ async def get_available_times(date: datetime) -> list:
             hours.append(time.strftime('%H:%M'))
     return hours
 
-# Функція для обробки вибору часу та підтвердження бронювання
+# Обробка вибору часу та підтвердження бронювання
 async def handle_time_selection(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
@@ -64,27 +64,26 @@ async def handle_time_selection(update: Update, context: CallbackContext) -> Non
     user_id = query.from_user.id
     booking_date = datetime.now().date()
 
-    # Перевірка доступності часу
     if await is_time_available(booking_date, selected_time):
         await save_booking(user_id, booking_date, selected_time)
         await query.edit_message_text(f"Час {selected_time} успішно заброньовано!")
     else:
         await query.edit_message_text(f"Час {selected_time} вже заброньовано. Спробуйте інший час.")
 
-# Функція для перевірки доступності часу
+# Перевірка доступності часу
 async def is_time_available(date: datetime, time: str) -> bool:
     conn = await connect_db()
     result = await conn.fetchrow("SELECT 1 FROM bookings WHERE date=$1 AND time=$2", date, time)
     await conn.close()
     return result is None
 
-# Функція для збереження бронювання
+# Збереження бронювання
 async def save_booking(user_id: int, date: datetime, time: str) -> None:
     conn = await connect_db()
     await conn.execute("INSERT INTO bookings (user_id, date, time) VALUES ($1, $2, $3)", user_id, date, time)
     await conn.close()
 
-# Функція для показу бронювань користувача
+# Показ бронювань користувача
 async def show_my_bookings(query):
     user_id = query.from_user.id
     conn = await connect_db()
@@ -100,7 +99,7 @@ async def show_my_bookings(query):
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text(text, reply_markup=reply_markup)
 
-# Функція для показу бронювань для скасування
+# Показ бронювань для скасування
 async def show_cancel_options(query):
     user_id = query.from_user.id
     conn = await connect_db()
@@ -115,7 +114,7 @@ async def show_cancel_options(query):
     else:
         await query.edit_message_text("У вас немає активних бронювань для скасування.")
 
-# Функція для обробки скасування бронювання
+# Обробка скасування бронювання
 async def handle_cancel_selection(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
@@ -136,6 +135,7 @@ async def main():
 
     await application.run_polling()
 
-# Запуск програми
+# Запуск програми з використанням основного подієвого циклу
 if __name__ == "__main__":
-    asyncio.run(main())
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(main())
