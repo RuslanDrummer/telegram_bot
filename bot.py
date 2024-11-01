@@ -7,7 +7,7 @@ from datetime import datetime, timedelta
 
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-TOKEN = os.getenv("TOKEN")
+TOKEN = os.getenv("123456789:ABCDefGHIJKLMNOPQRSTUVWXYZ")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 async def create_db_pool():
