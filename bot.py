@@ -30,10 +30,11 @@ async def main():
     # Закриваємо з'єднання з базою даних після завершення роботи
     await db_connection.close()
 
-# Перевірка на активний цикл подій
-try:
-    # Якщо вже є активний цикл подій, запускаємо main у ньому
-    asyncio.get_running_loop().run_until_complete(main())
-except RuntimeError:  # Якщо активного циклу подій немає
-    # Запускаємо новий цикл подій для виконання функції main
-    asyncio.run(main())
+# Запуск основної функції без використання asyncio.run()
+if __name__ == "__main__":
+    try:
+        loop = asyncio.get_running_loop()
+    except RuntimeError:  # Якщо немає активного циклу подій
+        loop = asyncio.new_event_loop()
+        asyncio.set_event_loop(loop)
+    loop.run_until_complete(main())
