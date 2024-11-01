@@ -45,10 +45,9 @@ async def main():
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
     # Запускаємо бота без явного закриття циклу подій
-    await application.initialize()
-    await application.start()
-    await application.run_polling()
+    application.run_polling()
 
+# Запуск основної функції без використання asyncio.run()
 if __name__ == '__main__':
     import asyncio
-    asyncio.run(main())
+    asyncio.get_event_loop().run_until_complete(main())
