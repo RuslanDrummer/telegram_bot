@@ -1,4 +1,5 @@
 import asyncio
+import concurrent.futures
 import os
 from telegram import Update
 from telegram.ext import Application, CommandHandler, CallbackContext
@@ -12,28 +13,28 @@ NEON_DATABASE_URL = os.getenv("DATABASE_URL")
 async def start(update: Update, context: CallbackContext) -> None:
     await update.message.reply_text("Привіт! Я ваш бот.")
 
-# Асинхронна функція для запуску бота
-async def bot_task():
-    # Підключення до бази даних
-    db_connection = await asyncpg.connect(NEON_DATABASE_URL)
-    
+# Функція для запуску бота у новому процесі
+def run_bot():
     # Налаштування Telegram Application
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
-    
-    # Запуск бота в режимі опитування
-    await application.initialize()
-    await application.start()
-    try:
-        await application.run_polling()
-    finally:
-        # Закриття з'єднання з базою даних і завершення роботи бота
-        await application.stop()
-        await application.shutdown()
-        await db_connection.close()
 
-# Основний цикл для запуску програми
-loop = asyncio.new_event_loop()
-asyncio.set_event_loop(loop)
-loop.create_task(bot_task())
-loop.run_forever()
+    # Запуск бота в режимі опитування
+    application.run_polling()
+
+# Асинхронна функція для запуску основної програми
+async def main():
+    # Підключення до бази даних
+    db_connection = await asyncpg.connect(NEON_DATABASE_URL)
+    
+    # Використання ProcessPoolExecutor для запуску бота у новому процесі
+    with concurrent.futures.ProcessPoolExecutor() as executor:
+        loop = asyncio.get_running_loop()
+        await loop.run_in_executor(executor, run_bot)
+
+    # Закриття з'єднання з базою даних після завершення роботи бота
+    await db_connection.close()
+
+# Запуск програми
+if __name__ == "__main__":
+    asyncio.run(main())
