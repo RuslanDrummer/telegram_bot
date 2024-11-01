@@ -1,8 +1,10 @@
 import os
 import logging
 import asyncpg
+import asyncio  # Додаємо asyncio тут
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+
 from datetime import datetime, timedelta
 
 # Налаштування логування
