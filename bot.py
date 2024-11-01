@@ -5,9 +5,10 @@ from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from datetime import datetime, timedelta
 
+# Налаштування логування
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
-TOKEN = os.getenv("123456789:ABCDefGHIJKLMNOPQRSTUVWXYZ")
+TOKEN = os.getenv("TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
 async def create_db_pool():
@@ -34,20 +35,20 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
     await update.message.reply_text("Ваша відповідь обробляється.")
 
 async def main():
+    # Підключення до бази даних та ініціалізація
     pool = await create_db_pool()
     await initialize_db(pool)
 
+    # Створення і конфігурація бота
     application = ApplicationBuilder().token(TOKEN).build()
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    await application.initialize()  # Ініціалізуємо додаток
-    await application.start()  # Запускаємо додаток
-    await application.run_polling()  # Запускаємо обробку подій без явного закриття циклу
+    # Запускаємо бота без явного закриття циклу подій
+    await application.initialize()
+    await application.start()
+    await application.run_polling()
 
 if __name__ == '__main__':
     import asyncio
-    try:
-        asyncio.run(main())  # Запускаємо без створення конфліктів циклу подій
-    except RuntimeError as e:
-        logging.error(f"RuntimeError: {e}")
+    asyncio.run(main())
