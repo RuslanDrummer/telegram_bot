@@ -1,13 +1,14 @@
 import os
 import logging
 import asyncpg
-import asyncio
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
+import asyncio
 
 # Налаштування логування
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
+# Отримуємо токен із змінної середовища
 TOKEN = os.getenv("TOKEN")
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -36,7 +37,7 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE) -> 
 
 async def main():
     logging.info("Starting the main function")
-    
+
     # Підключення до бази даних та ініціалізація
     pool = await create_db_pool()
     logging.info("Database pool created")
@@ -45,26 +46,22 @@ async def main():
 
     # Створення і конфігурація бота
     application = ApplicationBuilder().token(TOKEN).build()
-    await application.initialize()  # Ініціалізуємо перед стартом
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     logging.info("Application handlers added")
 
-    # Запуск бота
-    await application.start()
-    logging.info("Bot polling started")
-    
-    # Замінюємо updater.idle()
+    # Запускаємо бота
     try:
-        await asyncio.Event().wait()  # Чекає завершення вручну
-    finally:
-        await application.stop()
-        await application.shutdown()
-        logging.info("Bot polling stopped")
-
-# Основний запуск
-if __name__ == "__main__":
-    try:
-        asyncio.run(main())
+        await application.start()
+        logging.info("Bot polling started")
+        await application.updater.start_polling()
+        await application.updater.idle()
     except Exception as e:
         logging.error(f"An error occurred: {e}")
+    finally:
+        await application.stop()
+        logging.info("Bot polling stopped")
+
+# Основний запуск, використовуючи asyncio.run
+if __name__ == "__main__":
+    asyncio.run(main())
