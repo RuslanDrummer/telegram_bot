@@ -44,10 +44,12 @@ async def main():
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
 
-    # Запускаємо бота
-    application.run_polling()
+    # Запускаємо бота без явного закриття циклу подій
+    await application.run_polling()
 
 if __name__ == '__main__':
     import asyncio
-    loop = asyncio.get_event_loop()
-    loop.run_until_complete(main())
+    try:
+        asyncio.run(main())
+    except RuntimeError as e:
+        logging.error(f"RuntimeError: {e}")
