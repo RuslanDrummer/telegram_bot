@@ -12,119 +12,113 @@ NEON_DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Обробник команди /start
 async def start(update: Update, context: CallbackContext) -> None:
-    keyboard = [
-        [InlineKeyboardButton("Забронювати урок", callback_data="book_lesson")],
-        [InlineKeyboardButton("Мої бронювання", callback_data="my_bookings")],
-        [InlineKeyboardButton("Скасувати урок", callback_data="cancel_lesson")]
-    ]
-    reply_markup = InlineKeyboardMarkup(keyboard)
-    await update.message.reply_text("Виберіть дію:", reply_markup=reply_markup)
+    await update.message.reply_text("Привіт! Я ваш бот.")
 
-# Показ доступного часу для бронювання
-async def show_available_times(query):
-    available_times = await get_available_times(datetime.now())
-    keyboard = [[InlineKeyboardButton(time, callback_data=f"time_{time}")] for time in available_times]
+# Отримати доступні години для бронювання
+async def get_available_times(date):
+    # Ваша логіка отримання доступних годин на основі бази даних
+    # Приклад: повертає список доступних годин для вказаної дати
+    all_times = ["08:00", "09:30", "11:00", "13:00", "14:30", "16:00", "17:30", "19:00"]
+    booked_times = await get_booked_times(date)
+    available_times = [time for time in all_times if time not in booked_times]
+    return available_times
+
+async def get_booked_times(date):
+    # Приклад: імітація отримання годин, які вже заброньовані з бази даних
+    # Замініть на логіку запиту до бази даних
+    return ["09:30", "13:00"]  # Приклад зайнятих годин
+
+# Показ доступних днів та годин для бронювання
+async def show_available_days(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    # Визначаємо наступні 5 днів для вибору
+    days = [(datetime.now() + timedelta(days=i)) for i in range(5)]
+    keyboard = []
+    for day in days:
+        day_label = day.strftime("%a %d-%m")  # Наприклад, "Чт 02-11"
+        keyboard.append([InlineKeyboardButton(day_label, callback_data=f"date_{day.strftime('%Y-%m-%d')}")])
+
     keyboard.append([InlineKeyboardButton("Назад", callback_data="back_to_menu")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text("Виберіть день для бронювання:", reply_markup=reply_markup)
+
+# Показ доступних годин для вибраного дня
+async def show_available_times(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    # Отримуємо вибрану дату з callback_data
+    selected_date = query.data.split("_")[1]
+    available_times = await get_available_times(selected_date)
+
+    keyboard = [[InlineKeyboardButton(time, callback_data=f"time_{selected_date}_{time}")] for time in available_times]
+    keyboard.append([InlineKeyboardButton("Назад", callback_data="back_to_days")])
     reply_markup = InlineKeyboardMarkup(keyboard)
     await query.edit_message_text("Виберіть час для бронювання:", reply_markup=reply_markup)
 
-# Отримання доступного часу
-async def get_available_times(date: datetime) -> list:
-    hours = []
-    start_hour, end_hour = 8, 20
-    for hour in range(start_hour, end_hour):
-        time = date.replace(hour=hour, minute=0, second=0, microsecond=0)
-        if time > datetime.now():
-            hours.append(time.strftime('%H:%M'))
-    return hours
-
-# Обробка вибору часу та підтвердження бронювання
-async def handle_time_selection(update: Update, context: CallbackContext) -> None:
+# Вибір тривалості бронювання
+async def select_duration(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
-    
-    selected_time = query.data.split("_")[1]
-    user_id = query.from_user.id
-    booking_date = datetime.now().date()
 
-    if await is_time_available(booking_date, selected_time):
-        await save_booking(user_id, booking_date, selected_time)
-        await query.edit_message_text(f"Час {selected_time} успішно заброньовано!")
-    else:
-        await query.edit_message_text(f"Час {selected_time} вже заброньовано. Спробуйте інший час.")
+    # Отримуємо вибрану дату і час з callback_data
+    selected_date, selected_time = query.data.split("_")[1:]
+    context.user_data["selected_date"] = selected_date
+    context.user_data["selected_time"] = selected_time
 
-# Перевірка доступності часу
-async def is_time_available(date: datetime, time: str) -> bool:
-    conn = await asyncpg.connect(NEON_DATABASE_URL)
-    result = await conn.fetchrow("SELECT 1 FROM bookings WHERE date=$1 AND time=$2", date, time)
-    await conn.close()
-    return result is None
-
-# Збереження бронювання
-async def save_booking(user_id: int, date: datetime, time: str) -> None:
-    conn = await asyncpg.connect(NEON_DATABASE_URL)
-    await conn.execute("INSERT INTO bookings (user_id, date, time) VALUES ($1, $2, $3)", user_id, date, time)
-    await conn.close()
-
-# Показ бронювань користувача
-async def show_my_bookings(query):
-    user_id = query.from_user.id
-    conn = await asyncpg.connect(NEON_DATABASE_URL)
-    bookings = await conn.fetch("SELECT date, time FROM bookings WHERE user_id=$1 ORDER BY date, time", user_id)
-    await conn.close()
-    
-    if bookings:
-        text = "Ваші бронювання:\n" + "\n".join([f"{record['date']} {record['time']}" for record in bookings])
-    else:
-        text = "У вас немає активних бронювань."
-
-    keyboard = [[InlineKeyboardButton("Назад", callback_data="back_to_menu")]]
+    # Пропонуємо варіанти тривалості
+    keyboard = [
+        [InlineKeyboardButton("1 година", callback_data="duration_1")],
+        [InlineKeyboardButton("1.5 години", callback_data="duration_1.5")],
+        [InlineKeyboardButton("2 години", callback_data="duration_2")],
+        [InlineKeyboardButton("Назад", callback_data=f"time_{selected_date}")],
+    ]
     reply_markup = InlineKeyboardMarkup(keyboard)
-    await query.edit_message_text(text, reply_markup=reply_markup)
+    await query.edit_message_text("Виберіть тривалість для бронювання:", reply_markup=reply_markup)
 
-# Показ бронювань для скасування
-async def show_cancel_options(query):
-    user_id = query.from_user.id
-    conn = await asyncpg.connect(NEON_DATABASE_URL)
-    bookings = await conn.fetch("SELECT id, date, time FROM bookings WHERE user_id=$1 ORDER BY date, time", user_id)
-    await conn.close()
-    
-    if bookings:
-        keyboard = [[InlineKeyboardButton(f"{record['date']} {record['time']}", callback_data=f"cancel_{record['id']}")] for record in bookings]
-        keyboard.append([InlineKeyboardButton("Назад", callback_data="back_to_menu")])
-        reply_markup = InlineKeyboardMarkup(keyboard)
-        await query.edit_message_text("Виберіть бронювання для скасування:", reply_markup=reply_markup)
-    else:
-        await query.edit_message_text("У вас немає активних бронювань для скасування.")
-
-# Обробка скасування бронювання
-async def handle_cancel_selection(update: Update, context: CallbackContext) -> None:
+# Підтвердження бронювання
+async def confirm_booking(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
-    
-    booking_id = int(query.data.split("_")[1])
-    conn = await asyncpg.connect(NEON_DATABASE_URL)
-    await conn.execute("DELETE FROM bookings WHERE id=$1", booking_id)
-    await conn.close()
-    await query.edit_message_text("Ваше бронювання скасовано.")
+
+    # Отримуємо вибрану тривалість
+    selected_duration = query.data.split("_")[1]
+    selected_date = context.user_data["selected_date"]
+    selected_time = context.user_data["selected_time"]
+
+    # Збереження бронювання в базі даних (замініть на свою логіку)
+    await save_booking(selected_date, selected_time, selected_duration)
+
+    await query.edit_message_text(
+        f"Бронювання підтверджено на {selected_date} о {selected_time} тривалістю {selected_duration} годин."
+    )
+
+# Збереження бронювання (імітація)
+async def save_booking(date, time, duration):
+    # Ваша логіка для збереження бронювання в базі даних
+    pass
 
 # Функція для запуску бота у новому процесі
 def run_bot():
     application = Application.builder().token(TELEGRAM_TOKEN).build()
     application.add_handler(CommandHandler("start", start))
-    application.add_handler(CallbackQueryHandler(show_available_times, pattern="^book_lesson$"))
-    application.add_handler(CallbackQueryHandler(show_my_bookings, pattern="^my_bookings$"))
-    application.add_handler(CallbackQueryHandler(show_cancel_options, pattern="^cancel_lesson$"))
-    application.add_handler(CallbackQueryHandler(handle_time_selection, pattern="^time_"))
-    application.add_handler(CallbackQueryHandler(handle_cancel_selection, pattern="^cancel_"))
+    application.add_handler(CallbackQueryHandler(show_available_days, pattern="^book_lesson$"))
+    application.add_handler(CallbackQueryHandler(show_available_times, pattern="^date_"))
+    application.add_handler(CallbackQueryHandler(select_duration, pattern="^time_"))
+    application.add_handler(CallbackQueryHandler(confirm_booking, pattern="^duration_"))
+
     application.run_polling()
 
 # Асинхронна функція для запуску основної програми
 async def main():
     db_connection = await asyncpg.connect(NEON_DATABASE_URL)
+
     with concurrent.futures.ProcessPoolExecutor() as executor:
         loop = asyncio.get_running_loop()
         await loop.run_in_executor(executor, run_bot)
+
     await db_connection.close()
 
 # Запуск програми
