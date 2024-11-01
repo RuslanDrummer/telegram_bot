@@ -12,20 +12,23 @@ NEON_DATABASE_URL = os.getenv("DATABASE_URL")
 
 # Обробник команди /start
 async def start(update: Update, context: CallbackContext) -> None:
-    await update.message.reply_text("Привіт! Я ваш бот.")
+    keyboard = [
+        [InlineKeyboardButton("Забронювати урок", callback_data="book_lesson")],
+        [InlineKeyboardButton("Мої бронювання", callback_data="view_bookings")],
+        [InlineKeyboardButton("Скасувати бронювання", callback_data="cancel_booking")]
+    ]
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await update.message.reply_text("Привіт! Я ваш бот. Виберіть дію:", reply_markup=reply_markup)
 
-# Отримати доступні години для бронювання
+# Отримання доступних годин для бронювання
 async def get_available_times(date):
-    # Ваша логіка отримання доступних годин на основі бази даних
-    # Приклад: повертає список доступних годин для вказаної дати
     all_times = ["08:00", "09:30", "11:00", "13:00", "14:30", "16:00", "17:30", "19:00"]
     booked_times = await get_booked_times(date)
     available_times = [time for time in all_times if time not in booked_times]
     return available_times
 
 async def get_booked_times(date):
-    # Приклад: імітація отримання годин, які вже заброньовані з бази даних
-    # Замініть на логіку запиту до бази даних
+    # Імітація отримання годин, які вже заброньовані (замініть на реальний запит до БД)
     return ["09:30", "13:00"]  # Приклад зайнятих годин
 
 # Показ доступних днів та годин для бронювання
@@ -33,11 +36,10 @@ async def show_available_days(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
 
-    # Визначаємо наступні 5 днів для вибору
     days = [(datetime.now() + timedelta(days=i)) for i in range(5)]
     keyboard = []
     for day in days:
-        day_label = day.strftime("%a %d-%m")  # Наприклад, "Чт 02-11"
+        day_label = day.strftime("%a %d-%m")
         keyboard.append([InlineKeyboardButton(day_label, callback_data=f"date_{day.strftime('%Y-%m-%d')}")])
 
     keyboard.append([InlineKeyboardButton("Назад", callback_data="back_to_menu")])
@@ -49,7 +51,6 @@ async def show_available_times(update: Update, context: CallbackContext) -> None
     query = update.callback_query
     await query.answer()
 
-    # Отримуємо вибрану дату з callback_data
     selected_date = query.data.split("_")[1]
     available_times = await get_available_times(selected_date)
 
@@ -63,12 +64,10 @@ async def select_duration(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
 
-    # Отримуємо вибрану дату і час з callback_data
     selected_date, selected_time = query.data.split("_")[1:]
     context.user_data["selected_date"] = selected_date
     context.user_data["selected_time"] = selected_time
 
-    # Пропонуємо варіанти тривалості
     keyboard = [
         [InlineKeyboardButton("1 година", callback_data="duration_1")],
         [InlineKeyboardButton("1.5 години", callback_data="duration_1.5")],
@@ -83,21 +82,55 @@ async def confirm_booking(update: Update, context: CallbackContext) -> None:
     query = update.callback_query
     await query.answer()
 
-    # Отримуємо вибрану тривалість
     selected_duration = query.data.split("_")[1]
     selected_date = context.user_data["selected_date"]
     selected_time = context.user_data["selected_time"]
 
-    # Збереження бронювання в базі даних (замініть на свою логіку)
-    await save_booking(selected_date, selected_time, selected_duration)
+    await save_booking(selected_date, selected_time, selected_duration, update.effective_user.id)
 
     await query.edit_message_text(
         f"Бронювання підтверджено на {selected_date} о {selected_time} тривалістю {selected_duration} годин."
     )
 
 # Збереження бронювання (імітація)
-async def save_booking(date, time, duration):
-    # Ваша логіка для збереження бронювання в базі даних
+async def save_booking(date, time, duration, user_id):
+    # Логіка для збереження бронювання в базі даних
+    pass
+
+# Перегляд бронювань
+async def view_bookings(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    bookings = await get_user_bookings(update.effective_user.id)
+
+    if not bookings:
+        await query.edit_message_text("У вас немає активних бронювань.")
+        return
+
+    keyboard = [[InlineKeyboardButton(f"{b['date']} о {b['time']} ({b['duration']} год)", callback_data=f"cancel_{b['id']}")] for b in bookings]
+    keyboard.append([InlineKeyboardButton("Назад", callback_data="back_to_menu")])
+    reply_markup = InlineKeyboardMarkup(keyboard)
+    await query.edit_message_text("Ваші бронювання:", reply_markup=reply_markup)
+
+# Отримання бронювань користувача (імітація)
+async def get_user_bookings(user_id):
+    # Імітація запиту до БД для отримання бронювань користувача
+    return [{"id": 1, "date": "2024-11-02", "time": "14:30", "duration": "1"}, {"id": 2, "date": "2024-11-03", "time": "17:30", "duration": "1.5"}]
+
+# Скасування бронювання
+async def cancel_booking(update: Update, context: CallbackContext) -> None:
+    query = update.callback_query
+    await query.answer()
+
+    booking_id = int(query.data.split("_")[1])
+    await delete_booking(booking_id)
+
+    await query.edit_message_text("Ваше бронювання успішно скасовано.")
+
+# Видалення бронювання (імітація)
+async def delete_booking(booking_id):
+    # Логіка для видалення бронювання з бази даних
     pass
 
 # Функція для запуску бота у новому процесі
@@ -108,6 +141,9 @@ def run_bot():
     application.add_handler(CallbackQueryHandler(show_available_times, pattern="^date_"))
     application.add_handler(CallbackQueryHandler(select_duration, pattern="^time_"))
     application.add_handler(CallbackQueryHandler(confirm_booking, pattern="^duration_"))
+    application.add_handler(CallbackQueryHandler(view_bookings, pattern="^view_bookings$"))
+    application.add_handler(CallbackQueryHandler(cancel_booking, pattern="^cancel_"))
+    application.add_handler(CallbackQueryHandler(start, pattern="^back_to_menu$"))
 
     application.run_polling()
 
