@@ -45,6 +45,7 @@ async def main():
 
     # Створення і конфігурація бота
     application = ApplicationBuilder().token(TOKEN).build()
+    await application.initialize()  # Ініціалізуємо перед стартом
     application.add_handler(CommandHandler("start", start))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
     logging.info("Application handlers added")
