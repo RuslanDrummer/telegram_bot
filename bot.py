@@ -1,7 +1,7 @@
 import os
 import logging
 import asyncpg
-import asyncio  # Додаємо asyncio тут
+import asyncio
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 from datetime import datetime, timedelta
@@ -60,9 +60,16 @@ async def main():
     await application.run_polling()
     logging.info("Bot polling started")
 
-# Основний запуск, використовуючи asyncio.run
+# Запуск основної функції без використання asyncio.run()
 if __name__ == "__main__":
     try:
-        asyncio.run(main())
+        # Створення або отримання наявного циклу подій
+        loop = asyncio.get_event_loop()
+        if loop.is_closed():
+            loop = asyncio.new_event_loop()
+            asyncio.set_event_loop(loop)
+
+        # Запускаємо основну функцію в циклі подій
+        loop.run_until_complete(main())
     except Exception as e:
         logging.error(f"An error occurred: {e}")
