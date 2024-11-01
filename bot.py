@@ -5,8 +5,6 @@ import asyncio
 from telegram import Update, ReplyKeyboardMarkup
 from telegram.ext import ApplicationBuilder, CommandHandler, MessageHandler, filters, ContextTypes
 
-from datetime import datetime, timedelta
-
 # Налаштування логування
 logging.basicConfig(format='%(asctime)s - %(name)s - %(levelname)s - %(message)s', level=logging.INFO)
 
@@ -55,12 +53,11 @@ async def main():
     await application.start()
     logging.info("Bot polling started")
     
-    # Залишаємо бот працюючим
-    await application.updater.idle()  # Чекає завершення роботи
-
-    # Зупинка бота при завершенні
-    await application.stop()
-    logging.info("Bot polling stopped")
+    try:
+        await application.updater.idle()  # Чекає завершення роботи
+    finally:
+        await application.stop()
+        logging.info("Bot polling stopped")
 
 # Основний запуск
 if __name__ == "__main__":
