@@ -33,7 +33,7 @@ WORKING_HOURS_START = 8
 WORKING_HOURS_END = 20
 
 # Отримання токена з змінної середовища
-TOKEN = os.getenv("TOKEN")
+TOKEN = os.getenv("TOKEN")  # Вставте свій токен тут або налаштуйте в системі як змінну середовища
 
 # Додавання користувачів
 def add_user(user_id, username, role):
@@ -44,13 +44,13 @@ def add_user(user_id, username, role):
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user = update.effective_user
     add_user(user.id, user.username, "student")
+    keyboard = [["🔔 Забронювати", "📅 Мої бронювання", "❌ Скасувати"], ["/start"]]
     await update.message.reply_text(
         "Привіт! Ви можете:\n"
-        "/book - Забронювати час\n"
-        "/schedule - Переглянути розклад\n"
-        "/cancel - Скасувати бронювання\n"
-        "/sethours - Змінити робочі години (лише для вчителя)",
-        reply_markup=ReplyKeyboardMarkup([["/book", "/schedule", "/cancel"]], resize_keyboard=True)
+        "🔔 Забронювати час\n"
+        "📅 Мої бронювання\n"
+        "❌ Скасувати бронювання",
+        reply_markup=ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
     )
 
 # Перевірка ролі користувача
@@ -112,6 +112,18 @@ async def handle_time_selection(update: Update, context: ContextTypes.DEFAULT_TY
     conn.commit()
     await update.message.reply_text(f"Ви забронювали заняття на {selected_date} о {selected_time}.")
 
+# Функція для перегляду бронювань користувача
+async def view_bookings(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    user_id = update.effective_user.id
+    cursor.execute("SELECT date, time, duration FROM bookings WHERE user_id=?", (user_id,))
+    bookings = cursor.fetchall()
+
+    if bookings:
+        booking_text = "\n".join([f"{date} о {time} (Тривалість: {duration} год)" for date, time, duration in bookings])
+        await update.message.reply_text(f"Ваші бронювання:\n{booking_text}")
+    else:
+        await update.message.reply_text("У вас немає активних бронювань.")
+
 # Функція для скасування бронювання
 async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     user_id = update.effective_user.id
@@ -120,13 +132,20 @@ async def cancel(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
 
     if bookings:
         for booking_id, date, time in bookings:
-            cursor.execute("DELETE FROM bookings WHERE id=?", (booking_id,))
-            conn.commit()
-            await update.message.reply_text(f"Ваше заняття на {date} о {time} скасовано.")
+            booking_datetime = datetime.strptime(f"{date} {time}", "%d.%m.%Y %H:%M")
+            time_difference = (booking_datetime - datetime.now()).total_seconds() / 3600
+            if time_difference < 12:
+                await update.message.reply_text(
+                    f"Ви не можете скасувати заняття на {date} о {time}, адже до нього залишилось менше 12 годин."
+                )
+            else:
+                cursor.execute("DELETE FROM bookings WHERE id=?", (booking_id,))
+                conn.commit()
+                await update.message.reply_text(f"Ваше заняття на {date} о {time} скасовано.")
     else:
         await update.message.reply_text("У вас немає активних бронювань.")
 
-# Функція для перегляду розкладу
+# Функція для перегляду розкладу всіх бронювань
 async def schedule(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     cursor.execute("SELECT username, date, time FROM bookings")
     bookings = cursor.fetchall()
@@ -145,6 +164,7 @@ def main():
     application.add_handler(CommandHandler("book", book))
     application.add_handler(CommandHandler("schedule", schedule))
     application.add_handler(CommandHandler("cancel", cancel))
+    application.add_handler(CommandHandler("view_bookings", view_bookings))
     application.add_handler(MessageHandler(filters.Regex(r"^\d{2}\.\d{2}\.\d{4}$"), handle_day_selection))
     application.add_handler(MessageHandler(filters.Regex(r"^\d{2}:\d{2}$"), handle_time_selection))
 
